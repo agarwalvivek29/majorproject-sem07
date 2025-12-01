@@ -1,0 +1,189 @@
+# =============================================================================
+# Training Configuration for Deepfake Detection Model
+# =============================================================================
+# This configuration extends default.yaml with training-specific parameters.
+# Use this configuration when running training pipelines.
+# =============================================================================
+
+# Inherit from default configuration
+_extends: "default.yaml"
+
+# -----------------------------------------------------------------------------
+# Dataset Configuration
+# -----------------------------------------------------------------------------
+dataset:
+  # Dataset type: "fakeavceleb", "lipsynctimit", "dfdc", "custom"
+  type: "custom"
+  # Root directory containing the dataset
+  root_dir: "data/raw/"
+  # Subdirectory structure
+  structure:
+    real_dir: "real"
+    fake_dir: "fake"
+  # Metadata file (optional)
+  metadata_file: null
+  # Maximum videos per class (for debugging)
+  max_videos_per_class: null
+  # Video file extensions to include
+  extensions: [".mp4", ".avi", ".mov"]
+
+# -----------------------------------------------------------------------------
+# Data Augmentation
+# -----------------------------------------------------------------------------
+augmentation:
+  enabled: true
+  # Augmentation probability
+  probability: 0.5
+  # Available augmentations
+  transforms:
+    # Spatial augmentations (applied to face crops)
+    spatial:
+      horizontal_flip: true
+      rotation_range: 10        # degrees
+      scale_range: [0.9, 1.1]
+      brightness_range: [0.8, 1.2]
+      contrast_range: [0.8, 1.2]
+    # Temporal augmentations (applied to frame sequences)
+    temporal:
+      frame_dropout: 0.1        # Probability of dropping frames
+      temporal_jitter: 2        # Max frames to shift
+    # Audio augmentations
+    audio:
+      noise_injection: 0.01     # Noise amplitude
+      speed_change: [0.95, 1.05]
+      pitch_shift: [-2, 2]      # semitones
+
+# -----------------------------------------------------------------------------
+# Model Architecture Overrides
+# -----------------------------------------------------------------------------
+model:
+  # Visual encoder settings
+  visual_encoder:
+    freeze_backbone: false      # Fine-tune backbone
+    freeze_layers: 0            # Freeze first N layers
+
+  # Temporal model settings
+  temporal_model:
+    attention_heads: 8          # For transformer architecture
+    feedforward_dim: 1024       # Transformer FFN dimension
+
+  # Classifier head
+  classifier:
+    use_batch_norm: true
+    use_layer_norm: false
+
+# -----------------------------------------------------------------------------
+# Optimization Settings
+# -----------------------------------------------------------------------------
+optimization:
+  # Optimizer: "adam", "adamw", "sgd", "lamb"
+  optimizer: "adamw"
+
+  # Optimizer-specific parameters
+  adam:
+    betas: [0.9, 0.999]
+    eps: 1.0e-8
+
+  sgd:
+    momentum: 0.9
+    nesterov: true
+
+  # Learning rate schedule
+  lr_schedule:
+    # Warmup epochs
+    warmup_epochs: 5
+    # Warmup start LR multiplier
+    warmup_start_lr: 0.01
+    # Minimum LR (for cosine/plateau)
+    min_lr: 1.0e-6
+    # Step scheduler settings
+    step:
+      step_size: 10
+      gamma: 0.1
+    # Plateau scheduler settings
+    plateau:
+      factor: 0.5
+      patience: 5
+
+  # Loss function settings
+  loss:
+    # Loss type: "cross_entropy", "focal", "label_smoothing"
+    type: "cross_entropy"
+    # Focal loss gamma
+    focal_gamma: 2.0
+    # Label smoothing factor
+    label_smoothing: 0.1
+
+# -----------------------------------------------------------------------------
+# Training Loop Settings
+# -----------------------------------------------------------------------------
+training_loop:
+  # Evaluation frequency (epochs)
+  eval_frequency: 1
+  # Checkpoint frequency (epochs)
+  checkpoint_frequency: 5
+  # Keep only best N checkpoints
+  keep_n_checkpoints: 3
+  # Metric for best model selection
+  best_metric: "auc"
+  # Whether higher is better for best_metric
+  higher_is_better: true
+  # Gradient accumulation steps
+  gradient_accumulation: 1
+  # Mixed precision training
+  mixed_precision: true
+  # Compile model with torch.compile
+  compile_model: false
+
+# -----------------------------------------------------------------------------
+# Validation Settings
+# -----------------------------------------------------------------------------
+validation:
+  # Metrics to compute
+  metrics:
+    - "accuracy"
+    - "precision"
+    - "recall"
+    - "f1"
+    - "auc"
+    - "eer"                     # Equal Error Rate
+  # Threshold search for optimal decision boundary
+  threshold_search:
+    enabled: true
+    metric: "f1"
+    steps: 100
+
+# -----------------------------------------------------------------------------
+# Experiment Tracking
+# -----------------------------------------------------------------------------
+tracking:
+  # Tracking backend: "tensorboard", "wandb", "mlflow", null
+  backend: "tensorboard"
+  # Experiment name
+  experiment_name: "deepfake_detection"
+  # Run name (auto-generated if null)
+  run_name: null
+  # Log directory
+  log_dir: "logs/runs/"
+  # WandB settings
+  wandb:
+    project: "deepfake-detection"
+    entity: null
+  # MLflow settings
+  mlflow:
+    tracking_uri: "mlruns/"
+
+# -----------------------------------------------------------------------------
+# Distributed Training
+# -----------------------------------------------------------------------------
+distributed:
+  # Enable distributed training
+  enabled: false
+  # Backend: "nccl", "gloo"
+  backend: "nccl"
+  # Number of GPUs
+  num_gpus: 1
+  # Use DistributedDataParallel
+  ddp: true
+  # Find unused parameters in DDP
+  find_unused_params: false

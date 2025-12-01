@@ -1,0 +1,335 @@
+# =============================================================================
+# Audio-Visual Deepfake Detection System - Default Configuration
+# =============================================================================
+# This configuration file defines all parameters for the deepfake detection
+# pipeline including preprocessing, feature extraction, retrieval, and
+# classification settings.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Service Configuration (Microservices Architecture)
+# -----------------------------------------------------------------------------
+services:
+  # Service discovery and communication
+  registry:
+    host: "localhost"
+    port: 8500
+
+  # Individual service endpoints
+  preprocessing:
+    video:
+      host: "localhost"
+      port: 8001
+    face:
+      host: "localhost"
+      port: 8002
+    audio:
+      host: "localhost"
+      port: 8003
+
+  features:
+    visual:
+      host: "localhost"
+      port: 8011
+    temporal:
+      host: "localhost"
+      port: 8012
+    audio:
+      host: "localhost"
+      port: 8013
+    correlation:
+      host: "localhost"
+      port: 8014
+
+  retrieval:
+    host: "localhost"
+    port: 8021
+
+  classifier:
+    host: "localhost"
+    port: 8031
+
+  orchestrator:
+    host: "localhost"
+    port: 8041
+
+# -----------------------------------------------------------------------------
+# Preprocessing Configuration
+# -----------------------------------------------------------------------------
+preprocessing:
+  video:
+    # Frame extraction settings
+    sample_rate: 1              # Extract every n-th frame (1 = all frames)
+    max_frames: 300             # Maximum frames to process per video
+    target_fps: 25              # Target frame rate for normalization
+    supported_formats:          # Supported video formats
+      - ".mp4"
+      - ".avi"
+      - ".mov"
+      - ".mkv"
+      - ".webm"
+
+  face:
+    # Face detection backend: "mediapipe" or "haar"
+    backend: "mediapipe"
+    # Minimum confidence threshold for face detection
+    min_confidence: 0.7
+    # Output face crop size (width, height)
+    output_size: [224, 224]
+    # Bounding box expansion factor (1.3 = 30% larger)
+    margin_factor: 1.3
+    # Track faces across frames for consistency
+    enable_tracking: true
+    # Maximum faces to detect per frame
+    max_faces: 1
+    # Mouth region crop size for detailed analysis
+    mouth_crop_size: [96, 96]
+
+  audio:
+    # Audio sample rate in Hz
+    sample_rate: 16000
+    # Number of MFCC coefficients
+    n_mfcc: 13
+    # Number of Mel filterbank bands
+    n_mels: 40
+    # FFT window size in milliseconds
+    window_ms: 25.0
+    # Hop length in milliseconds
+    hop_ms: 10.0
+    # Pre-emphasis coefficient
+    pre_emphasis: 0.97
+    # Audio normalization
+    normalize: true
+
+# -----------------------------------------------------------------------------
+# Feature Extraction Configuration
+# -----------------------------------------------------------------------------
+features:
+  visual:
+    # CNN backbone model: "resnet50", "resnet18", "mobilenetv3"
+    model: "resnet50"
+    # Use pretrained ImageNet weights
+    pretrained: true
+    # Output embedding dimension (depends on model)
+    embedding_dim: 2048
+    # Batch size for inference
+    batch_size: 32
+    # Enable gradient computation for fine-tuning
+    fine_tune: false
+
+  temporal:
+    # Architecture: "lstm", "gru", "transformer"
+    architecture: "lstm"
+    # Input dimension (should match visual embedding_dim)
+    input_dim: 2048
+    # Hidden layer dimension
+    hidden_dim: 256
+    # Number of recurrent layers
+    num_layers: 2
+    # Dropout rate for regularization
+    dropout: 0.3
+    # Use bidirectional processing
+    bidirectional: true
+    # Output dimension (hidden_dim * 2 if bidirectional)
+    output_dim: 512
+
+  audio:
+    # Method: "mfcc", "wav2vec", "whisper"
+    method: "mfcc"
+    # Include delta and delta-delta features
+    include_deltas: true
+    # Output dimension (39 for MFCC+deltas, 768 for wav2vec)
+    embedding_dim: 39
+    # Aggregation method: "mean", "max", "attention"
+    aggregation: "mean"
+
+  correlation:
+    # Metrics to compute
+    metrics:
+      - "pearson"
+      - "cross_correlation"
+      - "dtw"
+    # Maximum lag in frames for cross-correlation
+    max_lag_frames: 5
+    # Threshold for genuine video correlation
+    genuine_threshold: 0.5
+
+# -----------------------------------------------------------------------------
+# Retrieval-Augmented Detection (RAD) Configuration
+# -----------------------------------------------------------------------------
+retrieval:
+  # FAISS index type: "flat", "ivfpq", "hnsw"
+  index_type: "flat"
+  # Number of neighbors to retrieve
+  k_neighbors: 5
+  # Feature aggregation: "concat", "mean", "weighted"
+  aggregation: "concat"
+  # L2 normalize vectors before indexing
+  normalize: true
+  # IVF-specific settings
+  ivf:
+    nlist: 100              # Number of clusters
+    nprobe: 10              # Clusters to search
+  # PQ-specific settings
+  pq:
+    m: 8                    # Number of subquantizers
+    nbits: 8                # Bits per subquantizer
+
+# -----------------------------------------------------------------------------
+# Classification Configuration
+# -----------------------------------------------------------------------------
+classifier:
+  # Model type: "logistic", "mlp", "svm", "xgboost"
+  model_type: "mlp"
+  # Hidden layer dimensions (MLP only)
+  hidden_dims: [256, 128]
+  # Activation function: "relu", "gelu", "silu"
+  activation: "relu"
+  # Dropout rate
+  dropout: 0.3
+  # Decision threshold for fake classification
+  threshold: 0.5
+  # Class weights for imbalanced data
+  class_weights: null       # or {"real": 1.0, "fake": 1.5}
+
+# -----------------------------------------------------------------------------
+# Training Configuration
+# -----------------------------------------------------------------------------
+training:
+  # Batch size for training
+  batch_size: 32
+  # Number of training epochs
+  num_epochs: 50
+  # Learning rate
+  learning_rate: 0.001
+  # Weight decay (L2 regularization)
+  weight_decay: 0.0001
+  # Learning rate scheduler: "step", "cosine", "plateau"
+  scheduler: "cosine"
+  # Early stopping patience (epochs)
+  early_stopping: 10
+  # Gradient clipping threshold
+  gradient_clip: 1.0
+  # Random seed for reproducibility
+  seed: 42
+  # Train/validation/test split ratios
+  split_ratios:
+    train: 0.7
+    val: 0.15
+    test: 0.15
+  # Ensure identity-disjoint splits
+  identity_disjoint: true
+
+# -----------------------------------------------------------------------------
+# Inference Configuration
+# -----------------------------------------------------------------------------
+inference:
+  # Compute device: "cuda", "cpu", "mps"
+  device: "cuda"
+  # Batch size for inference
+  batch_size: 16
+  # Enable mixed precision (FP16)
+  mixed_precision: true
+  # Cache preprocessed features
+  cache_features: true
+  # Confidence threshold for detection
+  confidence_threshold: 0.7
+
+# -----------------------------------------------------------------------------
+# Real-time Processing Configuration
+# -----------------------------------------------------------------------------
+realtime:
+  # Buffer window size in seconds
+  buffer_seconds: 2.0
+  # Processing stride in seconds
+  stride_seconds: 0.5
+  # Consecutive detections before alert
+  alert_consecutive: 3
+  # Video capture settings
+  capture:
+    # Default source (0 = webcam, or RTSP URL)
+    source: 0
+    # Target frame rate
+    fps: 30
+    # Resolution (width, height)
+    resolution: [640, 480]
+  # Alert settings
+  alert:
+    # Enable audio alert
+    sound_enabled: true
+    # Alert sound file
+    sound_file: "assets/alert.wav"
+    # Enable visual overlay
+    overlay_enabled: true
+
+# -----------------------------------------------------------------------------
+# Pipeline Orchestration Configuration
+# -----------------------------------------------------------------------------
+orchestration:
+  # Orchestrator type: "local", "celery", "airflow"
+  backend: "local"
+  # Maximum parallel workers
+  max_workers: 4
+  # Task timeout in seconds
+  task_timeout: 300
+  # Retry settings
+  retry:
+    max_retries: 3
+    retry_delay: 5
+  # Queue settings (for Celery)
+  celery:
+    broker_url: "redis://localhost:6379/0"
+    result_backend: "redis://localhost:6379/1"
+  # Airflow settings
+  airflow:
+    dag_folder: "dags/"
+    executor: "LocalExecutor"
+
+# -----------------------------------------------------------------------------
+# Logging Configuration
+# -----------------------------------------------------------------------------
+logging:
+  # Log level: "DEBUG", "INFO", "WARNING", "ERROR"
+  level: "INFO"
+  # Log format
+  format: "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"
+  # Log to file
+  file:
+    enabled: true
+    path: "logs/deepfake_detector.log"
+    rotation: "10 MB"
+    retention: "7 days"
+  # Log to console
+  console:
+    enabled: true
+    colorize: true
+
+# -----------------------------------------------------------------------------
+# Storage Configuration
+# -----------------------------------------------------------------------------
+storage:
+  # Model storage directory
+  models_dir: "models/"
+  # Processed data directory
+  processed_dir: "data/processed/"
+  # Cache directory
+  cache_dir: ".cache/"
+  # Temporary files directory
+  temp_dir: "/tmp/deepfake_detector/"
+
+# -----------------------------------------------------------------------------
+# API Configuration
+# -----------------------------------------------------------------------------
+api:
+  # API version
+  version: "v1"
+  # Enable API documentation
+  docs_enabled: true
+  # Rate limiting
+  rate_limit:
+    enabled: true
+    requests_per_minute: 60
+  # CORS settings
+  cors:
+    enabled: true
+    origins: ["*"]

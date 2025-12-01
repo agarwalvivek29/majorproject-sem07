@@ -1,0 +1,254 @@
+# =============================================================================
+# Deepfake Detection System - Docker Compose
+# =============================================================================
+# Microservices deployment configuration
+#
+# Usage:
+#   docker-compose up -d                    # Start all services
+#   docker-compose up detector              # Start detector service only
+#   docker-compose up -d --scale worker=3   # Scale workers
+#   docker-compose logs -f detector         # View logs
+# =============================================================================
+
+version: "3.9"
+
+services:
+  # ---------------------------------------------------------------------------
+  # Core Detector Service
+  # ---------------------------------------------------------------------------
+  detector:
+    build:
+      context: .
+      target: production
+    image: deepfake-detector:latest
+    container_name: deepfake-detector
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data:ro
+      - ./models:/app/models:ro
+      - ./logs:/app/logs
+      - detection-output:/app/output
+    environment:
+      - PYTHONUNBUFFERED=1
+      - LOG_LEVEL=INFO
+      - MODEL_DIR=/app/models
+      - DEVICE=cpu
+    command: ["scripts/detect.py", "--help"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import src; print('OK')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - deepfake-net
+
+  # ---------------------------------------------------------------------------
+  # Training Service
+  # ---------------------------------------------------------------------------
+  trainer:
+    build:
+      context: .
+      target: production
+    image: deepfake-detector:latest
+    container_name: deepfake-trainer
+    profiles:
+      - training
+    volumes:
+      - ./data:/app/data:ro
+      - ./models:/app/models
+      - ./logs:/app/logs
+      - ./config:/app/config:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+      - LOG_LEVEL=INFO
+      - DEVICE=cpu
+    command: >
+      scripts/train.py
+      --dataset /app/data/raw
+      --output /app/models
+      --config /app/config/training.yaml
+    networks:
+      - deepfake-net
+
+  # ---------------------------------------------------------------------------
+  # Real-time Streaming Service
+  # ---------------------------------------------------------------------------
+  realtime:
+    build:
+      context: .
+      target: production
+    image: deepfake-detector:latest
+    container_name: deepfake-realtime
+    profiles:
+      - streaming
+    restart: unless-stopped
+    volumes:
+      - ./models:/app/models:ro
+      - ./logs:/app/logs
+      - realtime-output:/app/output
+    environment:
+      - PYTHONUNBUFFERED=1
+      - LOG_LEVEL=INFO
+      - MODEL_DIR=/app/models
+      - WEBHOOK_URL=${WEBHOOK_URL:-}
+    command: >
+      scripts/realtime.py
+      ${STREAM_URL:-0}
+      --model /app/models
+      --threshold 0.5
+      --alert-file /app/output/alerts.jsonl
+    networks:
+      - deepfake-net
+
+  # ---------------------------------------------------------------------------
+  # API Service (Optional - for REST API)
+  # ---------------------------------------------------------------------------
+  api:
+    build:
+      context: .
+      target: production
+    image: deepfake-detector:latest
+    container_name: deepfake-api
+    profiles:
+      - api
+    restart: unless-stopped
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      - ./models:/app/models:ro
+      - ./logs:/app/logs
+      - api-uploads:/app/uploads
+    environment:
+      - PYTHONUNBUFFERED=1
+      - LOG_LEVEL=INFO
+      - MODEL_DIR=/app/models
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - deepfake-net
+
+  # ---------------------------------------------------------------------------
+  # Worker Service (for distributed processing)
+  # ---------------------------------------------------------------------------
+  worker:
+    build:
+      context: .
+      target: production
+    image: deepfake-detector:latest
+    profiles:
+      - distributed
+    restart: unless-stopped
+    volumes:
+      - ./models:/app/models:ro
+      - ./logs:/app/logs
+    environment:
+      - PYTHONUNBUFFERED=1
+      - LOG_LEVEL=INFO
+      - MODEL_DIR=/app/models
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+    networks:
+      - deepfake-net
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 2G
+
+  # ---------------------------------------------------------------------------
+  # Redis (for distributed task queue)
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: deepfake-redis
+    profiles:
+      - distributed
+      - api
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - deepfake-net
+
+  # ---------------------------------------------------------------------------
+  # Prometheus (for metrics)
+  # ---------------------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:v2.45.0
+    container_name: deepfake-prometheus
+    profiles:
+      - monitoring
+    restart: unless-stopped
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    networks:
+      - deepfake-net
+
+  # ---------------------------------------------------------------------------
+  # Grafana (for dashboards)
+  # ---------------------------------------------------------------------------
+  grafana:
+    image: grafana/grafana:10.0.0
+    container_name: deepfake-grafana
+    profiles:
+      - monitoring
+    restart: unless-stopped
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./config/grafana:/etc/grafana/provisioning:ro
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+    depends_on:
+      - prometheus
+    networks:
+      - deepfake-net
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  deepfake-net:
+    driver: bridge
+    name: deepfake-network
+
+# =============================================================================
+# Volumes
+# =============================================================================
+volumes:
+  detection-output:
+    name: deepfake-detection-output
+  realtime-output:
+    name: deepfake-realtime-output
+  api-uploads:
+    name: deepfake-api-uploads
+  redis-data:
+    name: deepfake-redis-data
+  prometheus-data:
+    name: deepfake-prometheus-data
+  grafana-data:
+    name: deepfake-grafana-data
