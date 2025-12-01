@@ -1,4 +1,4 @@
-# Audio-Visual Deepfake Detection System
+# Recognition of Fake News based on Lip Movement from Audio Video synchronization
 
 A comprehensive deepfake detection system using audio-visual synchronization analysis and Retrieval-Augmented Detection (RAD). This system detects manipulated videos by analyzing the correlation between speech audio and lip movements.
 
